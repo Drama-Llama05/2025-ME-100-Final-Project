@@ -1,0 +1,143 @@
+# main.py
+
+import network, ntptime, time, socket, _thread
+from machine import Pin
+from mfrc522 import MFRC522
+
+# ─── USER CONFIG ────────────────────────────────────────────────────────────────
+SSID     = 'YOUR_SSID'
+PASSWORD = 'YOUR_PASSWORD'
+
+# List of authorized RFID UIDs (hex strings)
+AUTHORIZED_UIDS = [
+    "A1B2C3D4",  # example UID 1
+    "1A2B3C4D",  # example UID 2
+    # … add your valid UIDs here …
+]
+
+# RC522 pins
+SCK  = 5
+MOSI = 19
+MISO = 21
+RST  = 2     # dummy GPIO (wired high)
+CS   = 22
+
+LOGFILE = 'log.csv'
+PORT    = 80
+
+# ─── WIFI & TIME ───────────────────────────────────────────────────────────────
+def connect_wifi():
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    wlan.connect(SSID, PASSWORD)
+    print("Connecting to Wi‑Fi...", end='')
+    while not wlan.isconnected():
+        time.sleep_ms(500)
+        print('.', end='')
+    print("\nConnected, IP =", wlan.ifconfig()[0])
+    return wlan.ifconfig()[0]
+
+def sync_time():
+    try:
+        ntptime.settime()
+        print("Clock synced via NTP.")
+    except:
+        print("NTP sync failed.")
+
+def timestamp():
+    # Adjust UTC to PST (UTC‑8)
+    try:
+        utc_secs = time.time()
+    except AttributeError:
+        # Some MicroPython ports don’t implement time.time(); fallback to localtime
+        tm = time.localtime()
+        # Convert localstruct to seconds since epoch
+        utc_secs = time.mktime(tm)
+    pst_secs = utc_secs - 8*3600
+    tm = time.localtime(pst_secs)
+    return "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*tm[0:6])
+
+# ─── LOGGING ────────────────────────────────────────────────────────────────────
+# Create file with header if it doesn't exist
+try:
+    open(LOGFILE, 'r').close()
+except OSError:
+    with open(LOGFILE, 'w') as f:
+        f.write("timestamp,uid_or_event\n")
+
+def log_event(event_str):
+    with open(LOGFILE, 'a') as f:
+        f.write("{},{}\n".format(timestamp(), event_str))
+    print("Logged:", event_str, "at", timestamp())
+
+# ─── RFID SETUP ─────────────────────────────────────────────────────────────────
+rfid = MFRC522(SCK, MOSI, MISO, RST, CS)
+seen = set()
+
+# ─── WEB SERVER ────────────────────────────────────────────────────────────────
+def web_server():
+    addr = socket.getaddrinfo('0.0.0.0', PORT)[0][-1]
+    s = socket.socket()
+    s.bind(addr)
+    s.listen(1)
+    print("Web server listening on port", PORT)
+
+    while True:
+        cl, client_addr = s.accept()
+        req = cl.recv(1024).decode('utf-8', 'ignore')
+        if 'GET /log.csv' in req:
+            try:
+                cl.send("HTTP/1.0 200 OK\r\n")
+                cl.send("Content-Type: text/csv\r\n")
+                cl.send("Content-Disposition: attachment; filename=\"{}\"\r\n".format(LOGFILE))
+                cl.send("\r\n")
+                with open(LOGFILE, 'r') as f:
+                    for line in f:
+                        cl.send(line)
+            except Exception as e:
+                cl.send("HTTP/1.0 500 Internal Server Error\r\n\r\n")
+        else:
+            cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n")
+            cl.send("""\
+<html>
+  <head><title>RFID Log</title></head>
+  <body>
+    <h1>RFID Tag Log</h1>
+    <p><a href="/log.csv">Download full CSV</a></p>
+  </body>
+</html>
+""")
+        cl.close()
+
+# ─── MAIN ───────────────────────────────────────────────────────────────────────
+def main():
+    ip = connect_wifi()
+    sync_time()
+    _thread.start_new_thread(web_server, ())
+
+    print("RFID scanner ready. Visit http://{}/ to download log.".format(ip))
+    while True:
+        status, _ = rfid.request(rfid.REQIDL)
+        if status == rfid.OK:
+            status, raw = rfid.anticoll()
+            if status == rfid.OK:
+                uid = "".join("{:02X}".format(b) for b in raw)
+                
+                # print new/seen info
+                if uid not in seen:
+                    print("✔ New tag:", uid)
+                    seen.add(uid)
+                else:
+                    print("· Seen tag:", uid)
+
+                # authorization check
+                if uid in AUTHORIZED_UIDS:
+                    print("User Verified:", uid)
+                    log_event(uid)
+                else:
+                    print("Unauthorized User Access Attempt:", uid)
+                    log_event("Unauthorized User Access Attempt")
+        time.sleep_ms(300)
+
+if __name__ == "__main__":
+    main()
