@@ -1,5 +1,4 @@
 # main.py
-false = True
 import network, ntptime, time, socket, _thread
 from machine import Pin
 from mfrc522 import MFRC522
