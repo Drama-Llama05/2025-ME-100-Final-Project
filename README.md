@@ -9,6 +9,16 @@ A MicroPython-driven smart tool cabinet that automates access control, tool trac
 ## Features
 
 - **User Authentication & Access Control**: Scan personal RFID cards to disarm the cabinet and unlock via a servo motor.
+  - Currently authorized users:
+    - "A1745C3EB7" : Sticker : Not Yet Assigned
+    - "42455C3E65" : Sticker : Not Yet Assigned
+    - "43975C3EB6" : Sticker : Not Yet Assigned
+    - "B56F5C3EB8" : Sticker : Not Yet Assigned
+    - "72475C3E57" : Sticker : Not Yet Assigned
+    - "31395C3E6A" : Sticker : Not Yet Assigned
+    - "E8B05B3E3D" : Sticker : Not Yet Assigned
+    - "68585C3E52" : Sticker : Not Yet Assigned
+    - "786E5C3E74" : Sticker : Not Yet Assigned
 - **Tool Tracking**: RFID tags on tools combined with load-cell measurements detect check‑outs and returns.
 - **Real-Time Logging**: Tag taps are timestamped and appended to a CSV (`log.csv`) on each ESP32; logs are served over HTTP.
 - **Visual & Audible Alerts**:
