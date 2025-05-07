@@ -19,6 +19,7 @@ AUTHORIZED_USERS = {
     "E8B05B3E3D": "Tool 7",
     "68585C3E52": "Tool 8",
     "786E5C3E74": "Tool 9",
+    "00FE5B3E9B": "Tool 10"
 }
 
 # RC522 pins
@@ -132,7 +133,7 @@ def web_server():
         elif 'GET /clear' in req:
             # Clear log CSV (reset header)
             with open(LOGFILE, 'w') as f:
-                f.write("timestamp,uid,username,state\n")
+                f.write("timestamp,uid,Tool,state\n")
             cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n")
             cl.send("<html><body><h1>Log Cleared</h1><p><a href='/'>Return to log viewer</a></p></body></html>")
 
@@ -144,7 +145,7 @@ def web_server():
 <html>
 <head>
   <meta charset="utf-8">
-  <title>RFID Log Viewer</title>
+  <title>Tool Log Viewer</title>
   <style>
     body { font-family: sans-serif; padding: 1rem; }
     table { border-collapse: collapse; width: 100%; }
@@ -154,18 +155,18 @@ def web_server():
   </style>
 </head>
 <body>
-  <h1>RFID Tag Log</h1>
+  <h1>Tool Log Viewer</h1>
   <button onclick="clearLog()">Clear Log</button>
   <div id="log">Loading…</div>
   <script>
     function loadLog() {
-      fetch('/log.csv').then(r => r.text()).then(txt => {
+      fetch('log.csv').then(r => r.text()).then(txt => {
         const lines = txt.trim().split('\\n').slice(1).reverse();
         let html = '<table>'
                  + '<tr>'
                  + '<th>Timestamp</th>'
                  + '<th>UID</th>'
-                 + '<th>Username</th>'
+                 + '<th>Tool</th>'
                  + '<th>State</th>'
                  + '</tr>';
         lines.forEach(line => {
@@ -187,7 +188,7 @@ def web_server():
 
     function clearLog() {
       if (confirm('Are you sure you want to clear the log?')) {
-        fetch('/clear').then(() => loadLog());
+        fetch('clear').then(() => loadLog());
       }
     }
 
@@ -225,7 +226,7 @@ def main():
                     led_green.value(1); time.sleep_ms(500); led_green.value(0)
                     log_access(uid, user)
                 else:
-                    user = "Unauthorized"
+                    user = "Unrecognized Tool"
                     print(f"Unauthorized User Access Attempt: {uid}")
                     led_red.value(1); time.sleep_ms(500); led_red.value(0)
                     log_access(uid, user)
