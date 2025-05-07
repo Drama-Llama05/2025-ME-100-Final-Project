@@ -7,19 +7,17 @@ from servo import Servo
 
 # ─── USER CONFIG ────────────────────────────────────────────────────────────────
 SSID     = 'Berkeley-IoT'
-PASSWORD = 'YOUR_PASSWORD'
+PASSWORD = 'CsN,55Pd'
 
 # map each valid UID to a user name
 AUTHORIZED_USERS = {
-    "A1745C3EB7": "Tool 1",
-    "42455C3E65": "Tool 2",
-    "43975C3EB6": "Tool 3",
-    "B56F5C3EB8": "Tool 4",
-    "72475C3E57": "Tool 5",
-    "31395C3E6A": "Tool 6",
-    "E8B05B3E3D": "Tool 7",
-    "68585C3E52": "Tool 8",
-    "786E5C3E74": "Tool 9",
+    "8E8939033D": "User 1",
+    "1AB631039E": "User 2",
+    "17182D0220": "User 3",
+    "2BE9960256": "User 4",
+    "4B88BB027A": "User 5",
+    "299D4603F1": "User 6",
+    "026FC101AD": "User 7"
 }
 
 # RC522 pins
@@ -150,7 +148,7 @@ def web_server():
   <div id="log">Loading…</div>
   <script>
     function loadLog() {
-      fetch('/log.csv').then(r => r.text()).then(txt => {
+      fetch('log.csv').then(r => r.text()).then(txt => {
         const lines = txt.trim().split('\\n').slice(1).reverse();  // REVERSE to show latest first
         let html = '<table>'
                  + '<tr><th>Timestamp</th><th>UID</th><th>Username</th></tr>';
@@ -168,7 +166,7 @@ def web_server():
 
     function clearLog() {
       if (confirm('Are you sure you want to clear the log?')) {
-        fetch('/clear').then(() => loadLog());
+        fetch('clear').then(() => loadLog());
       }
     }
 
@@ -229,4 +227,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
