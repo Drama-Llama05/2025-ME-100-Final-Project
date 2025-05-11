@@ -1,15 +1,12 @@
-# main.py
-
-import network, ntptime, time, socket, _thread
-from machine import Pin
-from mfrc522 import MFRC522
+import network, ntptime, time, socket, _thread   # bring in Wi-Fi, NTP sync, timing, HTTP sockets, threading
+from machine import Pin                         # GPIO control for LEDs
+from mfrc522 import MFRC522                     # RC522 RFID reader driver
 
 # ─── USER CONFIG ────────────────────────────────────────────────────────────────
-SSID = "Berkeley-IoT"
-PASSWORD = "4J,8cFlZ"
+SSID = "Berkeley-IoT"                         # Wi-Fi SSID
+PASSWORD = "4J,8cFlZ"                          # Wi-Fi password
 
-# map each valid UID to a user name
-AUTHORIZED_USERS = {
+AUTHORIZED_USERS = {                            # map each RFID UID to a tool name
     "A1745C3EB7": "Tool 1",
     "42455C3E65": "Tool 2",
     "43975C3EB6": "Tool 3",
@@ -23,99 +20,97 @@ AUTHORIZED_USERS = {
 }
 
 # RC522 pins
-SCK  = 5
-MOSI = 19
-MISO = 21
-RST  = 2     # dummy GPIO (wired high)
-CS   = 22
+SCK  = 5                                     # SPI clock pin for RC522
+MOSI = 19                                    # SPI MOSI pin
+MISO = 21                                    # SPI MISO pin
+RST  = 2                                     # RC522 reset pin tied high
+CS   = 22                                    # RC522 chip-select pin
 
 # status LEDs
-led_green = Pin(25, mode=Pin.OUT)
-led_red   = Pin(13, mode=Pin.OUT)
+led_green = Pin(25, mode=Pin.OUT)            # green LED output pin
+led_red   = Pin(13, mode=Pin.OUT)            # red LED output pin
 
-LOGFILE = 'log.csv'
-PORT    = 80
+LOGFILE = 'log.csv'                          # CSV log filename
+PORT    = 80                                 # HTTP port for web server
 
 # ─── WIFI & TIME ───────────────────────────────────────────────────────────────
 def connect_wifi():
-    wlan = network.WLAN(network.STA_IF)
-    wlan.active(True)
-    wlan.connect(SSID, PASSWORD)
+    wlan = network.WLAN(network.STA_IF)       # create station WLAN interface
+    wlan.active(True)                         # enable Wi-Fi radio
+    wlan.connect(SSID, PASSWORD)              # start connection to AP
     print("Connecting to Wi-Fi...", end='')
     while not wlan.isconnected():
-        time.sleep_ms(500)
-        print('.', end='')
-    print("\nConnected, IP =", wlan.ifconfig()[0])
-    led_green.value(1)
-    led_red.value(1)
+        time.sleep_ms(500)                    # wait 500ms
+        print('.', end='')                   # progress indicator
+    print("\nConnected, IP =", wlan.ifconfig()[0])  # display IP
+    led_green.value(1); led_red.value(1)      # blink LEDs to signal connect
     time.sleep_ms(500)
-    led_green.value(0)
-    led_red.value(0)
-    return wlan.ifconfig()[0]
+    led_green.value(0); led_red.value(0)
+    return wlan.ifconfig()[0]                # return device IP address
+
 
 def sync_time():
     try:
-        ntptime.settime()
+        ntptime.settime()                     # attempt NTP sync
         print("Clock synced via NTP.")
     except:
-        print("NTP sync failed.")
+        print("NTP sync failed.")           # handle failure quietly
+
 
 def timestamp():
-    # get current UTC seconds (fallback if time.time() missing)
     try:
-        utc_secs = time.time()
+        utc_secs = time.time()               # get seconds since epoch
     except AttributeError:
-        utc_secs = time.mktime(time.localtime())
-    # PST = UTC - 7h
-    pst_secs = utc_secs - 7 * 3600
-    tm = time.localtime(pst_secs)
-    return "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*tm[0:6])
+        utc_secs = time.mktime(time.localtime())  # fallback if time.time missing
+    pst_secs = utc_secs - 7 * 3600           # adjust UTC to PDT (UTC-7h)
+    tm = time.localtime(pst_secs)            # convert to broken-down tuple
+    return "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(*tm[0:6])  # formatted string
 
 # ─── LOGGING ────────────────────────────────────────────────────────────────────
 # ensure CSV exists with correct header (added 'state' column)
 try:
-    open(LOGFILE, 'r').close()
+    open(LOGFILE, 'r').close()             # check for existing log file
 except OSError:
     with open(LOGFILE, 'w') as f:
-        f.write("timestamp,uid,username,state\n")
+        f.write("timestamp,uid,username,state\n")  # create header if absent
+
 
 def log_access(uid, username):
     # count prior entries for this UID
     count = 0
     try:
         with open(LOGFILE, 'r') as f:
-            next(f)  # skip header
+            next(f)  # skip header row
             for line in f:
                 parts = line.strip().split(',')
                 if parts[1] == uid:
-                    count += 1
+                    count += 1               # increment count if UID matches
     except OSError:
-        pass
+        pass                                 # ignore if file read fails
 
-    # determine new state: odd→Checked Out, even→Checked In
-    new_count = count + 1
-    state = "Checked Out" if (new_count % 2) == 1 else "Checked In"
+    new_count = count + 1                   # this access number
+    state = "Checked Out" if (new_count % 2) == 1 else "Checked In"  # odd→out, even→in
 
-    ts = timestamp()
+    ts = timestamp()                        # generate timestamp string
     with open(LOGFILE, 'a') as f:
-        f.write("{},{},{},{}\n".format(ts, uid, username, state))
-    print("Logged:", uid, username, state, "at", ts)
+        f.write("{},{},{},{}\n".format(ts, uid, username, state))  # append new row
+    print("Logged:", uid, username, state, "at", ts)  # console feedback
 
 # ─── RFID SETUP ─────────────────────────────────────────────────────────────────
-rfid = MFRC522(SCK, MOSI, MISO, RST, CS)
-seen = set()
+rfid = MFRC522(SCK, MOSI, MISO, RST, CS)    # initialize RFID reader hardware
+seen = set()                                # track seen UIDs to mark new vs repeat
 
 # ─── WEB SERVER ────────────────────────────────────────────────────────────────
 def web_server():
-    addr = socket.getaddrinfo('0.0.0.0', PORT)[0][-1]
-    srv = socket.socket()
-    srv.bind(addr)
-    srv.listen(1)
+    addr = socket.getaddrinfo('0.0.0.0', PORT)[0][-1]  # resolve bind address
+    srv = socket.socket()                     # create socket
+    srv.bind(addr)                            # bind to 0.0.0.0:PORT
+    srv.listen(1)                             # listen queue depth 1
     print("Web server listening on port", PORT)
 
     while True:
-        cl, _ = srv.accept()
-        req = cl.recv(1024).decode('utf-8', 'ignore')
+        cl, _ = srv.accept()                  # block until client connects
+        req = cl.recv(1024).decode('utf-8', 'ignore')  # read HTTP request
 
         if 'GET /log.csv' in req:
             # raw CSV download
@@ -126,14 +121,14 @@ def web_server():
             try:
                 with open(LOGFILE, 'r') as f:
                     for line in f:
-                        cl.send(line)
+                        cl.send(line)        # stream each log line
             except:
                 cl.send("HTTP/1.0 500 Internal Server Error\r\n\r\n")
 
         elif 'GET /clear' in req:
             # Clear log CSV (reset header)
             with open(LOGFILE, 'w') as f:
-                f.write("timestamp,uid,Tool,state\n")
+                f.write("timestamp,uid,Tool,state\n")  # reset header
             cl.send("HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n")
             cl.send("<html><body><h1>Log Cleared</h1><p><a href='/'>Return to log viewer</a></p></body></html>")
 
@@ -197,42 +192,41 @@ def web_server():
   </script>
 </body>
 </html>
-""")
-        cl.close()
+""")  # serve viewer page
+        cl.close()                              # ensure connection closed
 
 # ─── MAIN ───────────────────────────────────────────────────────────────────────
 def main():
-    ip = connect_wifi()
-    sync_time()
-    _thread.start_new_thread(web_server, ())
+    ip = connect_wifi()                       # join Wi-Fi
+    sync_time()                               # sync RTC
+    _thread.start_new_thread(web_server, ())  # run web server in background
 
     print("RFID scanner ready. Visit http://{}/ to view live log.".format(ip))
     while True:
-        status, _ = rfid.request(rfid.REQIDL)
+        status, _ = rfid.request(rfid.REQIDL) # poll for tag presence
         if status == rfid.OK:
-            status, raw = rfid.anticoll()
+            status, raw = rfid.anticoll()     # anti-collision UID read
             if status == rfid.OK:
-                uid = "".join("{:02X}".format(b) for b in raw)
+                uid = "".join("{:02X}".format(b) for b in raw)  # format UID hex
 
                 if uid not in seen:
                     print("✔ New tag:", uid)
-                    seen.add(uid)
+                    seen.add(uid)           # mark this UID seen
                 else:
                     print("· Seen tag:", uid)
 
                 if uid in AUTHORIZED_USERS:
-                    user = AUTHORIZED_USERS[uid]
+                    user = AUTHORIZED_USERS[uid]  # valid tool
                     print(f"User Verified: {user} ({uid})")
-                    led_green.value(1); time.sleep_ms(500); led_green.value(0)
-                    log_access(uid, user)
+                    led_green.value(1); time.sleep_ms(500); led_green.value(0)  # blink green
+                    log_access(uid, user)    # record check-out/in
                 else:
                     user = "Unrecognized Tool"
                     print(f"Unauthorized User Access Attempt: {uid}")
-                    led_red.value(1); time.sleep_ms(500); led_red.value(0)
-                    log_access(uid, user)
+                    led_red.value(1); time.sleep_ms(500); led_red.value(0)      # blink red
+                    log_access(uid, user)    # record failed attempt
 
-        time.sleep_ms(200)
-
+        time.sleep_ms(200)                     # short delay to debounce
 
 if __name__ == "__main__":
-    main()
+    main()                                    # start the application
